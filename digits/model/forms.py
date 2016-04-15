@@ -69,23 +69,23 @@ class ModelForm(Form):
             )
 
 
-    python_layer_from_client = wtforms.BooleanField(u'Use client side file',
+    python_layer_from_client = utils.forms.BooleanField(u'Use client-side file',
                                                 default=False)
 
     python_layer_client_file = utils.forms.FileField(
-        u'Python Layer File (client side)',
+        u'Client-side file',
         validators=[
             validate_py_ext
         ],
-        tooltip = "Choose the python file on the client containing layer functions."
+        tooltip = "Choose a Python file on the client containing layer definitions."
     )
     python_layer_server_file = utils.forms.StringField(
-        u'Python Layer File (server side)',
+        u'Server-side file',
         validators=[
             validate_file_exists,
             validate_py_ext
         ],
-        tooltip = "Choose the python file on the server containing layer functions."
+        tooltip = "Choose a Python file on the server containing layer definitions."
     )
 
     train_epochs = utils.forms.IntegerField('Training epochs',
@@ -274,13 +274,15 @@ class ModelForm(Form):
     select_gpu = wtforms.RadioField('Select which GPU you would like to use',
             choices = [('next', 'Next available')] + [(
                 index,
-                '#%s - %s%s' % (
+                '#%s - %s (%s memory)' % (
                     index,
                     get_device(index).name,
-                    ' (%s memory)' % sizeof_fmt(get_nvml_info(index)['memory']['total'])
-                        if get_nvml_info(index) and 'memory' in get_nvml_info(index) else '',
-                    ),
-                ) for index in config_value('gpu_list').split(',') if index],
+                    sizeof_fmt(
+                        get_nvml_info(index)['memory']['total']
+                        if get_nvml_info(index) and 'memory' in get_nvml_info(index)
+                        else get_device(index).totalGlobalMem)
+                ),
+            ) for index in config_value('gpu_list').split(',') if index],
             default = 'next',
             )
 
@@ -288,13 +290,15 @@ class ModelForm(Form):
     select_gpus = utils.forms.SelectMultipleField('Select which GPU[s] you would like to use',
             choices = [(
                 index,
-                '#%s - %s%s' % (
+                '#%s - %s (%s memory)' % (
                     index,
                     get_device(index).name,
-                    ' (%s memory)' % sizeof_fmt(get_nvml_info(index)['memory']['total'])
-                        if get_nvml_info(index) and 'memory' in get_nvml_info(index) else '',
-                    ),
-                ) for index in config_value('gpu_list').split(',') if index],
+                    sizeof_fmt(
+                        get_nvml_info(index)['memory']['total']
+                        if get_nvml_info(index) and 'memory' in get_nvml_info(index)
+                        else get_device(index).totalGlobalMem)
+                ),
+            ) for index in config_value('gpu_list').split(',') if index],
             tooltip = "The job won't start until all of the chosen GPUs are available."
             )
 

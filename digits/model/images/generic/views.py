@@ -238,16 +238,16 @@ def infer_one():
     """
     model_job = job_from_request()
 
-    image = None
-    if 'image_url' in flask.request.form and flask.request.form['image_url']:
-        image_path = flask.request.form['image_url']
+    remove_image_path = False
+    if 'image_path' in flask.request.form and flask.request.form['image_path']:
+        image_path = flask.request.form['image_path']
     elif 'image_file' in flask.request.files and flask.request.files['image_file']:
         outfile = tempfile.mkstemp(suffix='.bin')
         flask.request.files['image_file'].save(outfile[1])
         image_path = outfile[1]
         os.close(outfile[0])
     else:
-        raise werkzeug.exceptions.BadRequest('must provide image_url or image_file')
+        raise werkzeug.exceptions.BadRequest('must provide image_path or image_file')
 
     epoch = None
     if 'snapshot_epoch' in flask.request.form:
@@ -279,11 +279,8 @@ def infer_one():
     # delete job folder and remove from scheduler list
     scheduler.delete_job(inference_job)
 
-    # remove file (fails if a URL was provided)
-    try:
+    if remove_image_path:
         os.remove(image_path)
-    except:
-        pass
 
     image = None
     if inputs is not None and len(inputs['data']) == 1:
@@ -299,6 +296,70 @@ def infer_one():
                 network_outputs = outputs,
                 visualizations  = visualizations,
                 total_parameters= sum(v['param_count'] for v in visualizations if v['vis_type'] == 'Weights'),
+                )
+
+@blueprint.route('/infer_db.json', methods=['POST'])
+@blueprint.route('/infer_db', methods=['POST', 'GET'])
+def infer_db():
+    """
+    Infer a database
+    """
+    model_job = job_from_request()
+
+    if not 'db_path' in flask.request.form or flask.request.form['db_path'] is None:
+        raise werkzeug.exceptions.BadRequest('db_path is a required field')
+
+    db_path = flask.request.form['db_path']
+
+    if not os.path.exists(db_path):
+            raise werkzeug.exceptions.BadRequest('DB "%s" does not exit' % db_path)
+
+    epoch = None
+    if 'snapshot_epoch' in flask.request.form:
+        epoch = float(flask.request.form['snapshot_epoch'])
+
+    # create inference job
+    inference_job = ImageInferenceJob(
+                username    = utils.auth.get_username(),
+                name        = "Infer Many Images",
+                model       = model_job,
+                images      = db_path,
+                epoch       = epoch,
+                layers      = 'none',
+                )
+
+    # schedule tasks
+    scheduler.add_job(inference_job)
+
+    # wait for job to complete
+    inference_job.wait_completion()
+
+    # retrieve inference data
+    inputs, outputs, _ = inference_job.get_data()
+
+    # delete job folder and remove from scheduler list
+    scheduler.delete_job(inference_job)
+
+    if outputs is not None and len(outputs) < 1:
+        # an error occurred
+        outputs = None
+
+    if inputs is not None:
+        keys = [str(idx) for idx in inputs['ids']]
+    else:
+        keys = None
+
+    if request_wants_json():
+        result = {}
+        for i, key in enumerate(keys):
+            result[key] = dict((name, blob[i].tolist()) for name,blob in outputs.iteritems())
+        return flask.jsonify({'outputs': result})
+    else:
+        return flask.render_template('models/images/generic/infer_db.html',
+                model_job       = model_job,
+                job             = inference_job,
+                keys            = keys,
+                network_outputs = outputs,
                 )
 
 @blueprint.route('/infer_many.json', methods=['POST'])
