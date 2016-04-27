@@ -11,7 +11,7 @@ package.path = debug.getinfo(1, "S").source:match[[^@?(.*[\/])[^\/]-$]] .."?.lua
 require 'logmessage'
 local ffi = require 'ffi'
 
-local tds = check_require 'tds'
+local tdsIsInstalled, tds = pcall(function() return check_require 'tds' end)
 
 -- enable shared serialization to speed up Tensor passing between threads
 threads.Threads.serialization('threads.sharedserialize')
@@ -278,7 +278,7 @@ function DBSource:new (backend, db_path, labels_db_path, mirror, meanTensor, isT
         end
     end
 
-    logmessage.display(0,'Image channels are ' .. self.ImageChannels .. ', Image width is ' .. self.ImageSizeY .. ' and Image height is ' .. self.ImageSizeX)
+    logmessage.display(0,'Image channels are ' .. self.ImageChannels .. ', Image width is ' .. self.ImageSizeX .. ' and Image height is ' .. self.ImageSizeY)
 
     self.mirror = mirror
     self.train = isTrain
@@ -322,7 +322,14 @@ end
 
 -- Derived class method lmdb_getKeys
 function DBSource:lmdb_getKeys ()
-    local Keys = tds.Vec()
+    local Keys
+    if tdsIsInstalled then
+        -- use tds.Vec() to allocate memory outside of Lua heap
+        Keys = tds.Vec()
+    else
+        -- if tds is not installed, use regular table (and Lua memory allocator)
+        Keys = {}
+    end
     local i=0
     local key=nil
     for k,v in all_keys(self.lmdb_data.c,nil,self.lightningmdb.MDB_NEXT) do
@@ -610,12 +617,12 @@ end
 
 -- wait until next data loader job completes
 function DataLoader:waitNext()
+    -- wait for next data loader job to complete
+    self.threadPool:dojob()
     -- check for errors in loader threads
     if self.threadPool:haserror() then -- check for errors
         self.threadPool:synchronize() -- finish everything and throw error
     end
-    -- wait for next data loader job to complete
-    self.threadPool:dojob()
 end
 
 -- free data loader resources
